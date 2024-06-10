@@ -1,0 +1,62 @@
+import pandas as pd
+import mlflow
+import pickle
+from sklearn.linear_model import LinearRegression
+from sklearn.feature_extraction import DictVectorizer
+if 'transformer' not in globals():
+    from mage_ai.data_preparation.decorators import transformer
+if 'test' not in globals():
+    from mage_ai.data_preparation.decorators import test
+
+
+
+
+@transformer
+def transform(df, *args, **kwargs):
+    """
+    - Fit a dict vectorizer
+    - Train a linear regression with default parameres
+    - Use pick up and drop off locations separately, don't create
+     a combination feature
+    - Let's now use it in the pipeline. We will need to create
+     another transformation block, and return both the
+     dict vectorizer and the model
+
+    What's the intercept of the model?
+
+    Hint: print the intercept_ field in the code block
+    """
+    # Specify your transformation logic here
+    # Sample the DataFrame
+    mlflow.set_tracking_uri(" http://192.168.1.234:5000")
+    mlflow.set_experiment("my-experiment-234")
+    mlflow.sklearn.autolog(log_datasets = False)
+    with mlflow.start_run():
+        df = df.sample(1000)
+        categorical = ['PULocationID', 'DOLocationID'] 
+        df.lpep_dropoff_datetime = pd.to_datetime(df.tpep_dropoff_datetime)
+        df.lpep_pickup_datetime = pd.to_datetime(df.tpep_pickup_datetime)
+        df['duration'] = df.lpep_dropoff_datetime - df.lpep_pickup_datetime
+        df.duration = df.duration.apply(lambda td: td.total_seconds() / 60)
+        dv = DictVectorizer()
+        train_dicts = df[categorical].to_dict(orient='records')
+        X_train = dv.fit_transform(train_dicts)
+        target = 'duration'
+        y_train = df[target].values
+        lr = LinearRegression()
+        lr.fit(X_train, y_train)
+        mlflow.sklearn.log_model(dv, "dict_vectorizer")
+        with open('lr.bin', 'wb') as f_out:
+            pickle.dump((dv, lr), f_out)
+        mlflow.log_artifact("lr.bin", artifact_path="preprocessor")
+        
+        
+    return lr.intercept_
+
+
+@test
+def test_output(output, *args) -> None:
+    """
+    Template code for testing the output of the block.
+    """
+    assert output is not None, 'The output is undefined'
